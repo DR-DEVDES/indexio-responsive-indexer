@@ -9,7 +9,7 @@ declare(strict_types=1);
 $config = [
     'title' => 'INDEXIO INDEXER',
     'browseDirectories' => true,
-    'showHiddenFiles' => false,
+    'showHiddenFiles' => true,
     'dateFormat' => 'd.m.Y · H:i',
     'sizeDecimals' => 1,
     'robots' => 'noindex, nofollow',
@@ -107,7 +107,12 @@ function queryUrl(array $changes = []): string {
             $params[$key] = $value;
         }
     }
-    return '?' . http_build_query($params);
+    if (!$params) {
+        return '?';
+    }
+    // RFC 3986: Leerzeichen als %20 statt +, Schrägstriche bleiben lesbar
+    $query = http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+    return '?' . str_replace('%2F', '/', $query);
 }
 
 $root = realpath(__DIR__);
@@ -303,7 +308,16 @@ body.grid-mode .file-list{grid-template-columns:repeat(auto-fit,minmax(245px,1fr
         $next = trim(($relativePath !== '' ? $relativePath . '/' : '') . $name, '/');
         $url = queryUrl(['b'=>$next,'s'=>null,'r'=>null]);
     } else {
-        $url = ($relativePath !== '' ? implode('/', array_map('rawurlencode', $segments)) . '/' : '') . rawurlencode($name);
+        // Link directly to the real file path relative to this PHP script.
+        // Encode each path segment separately so spaces, umlauts, #, %, etc.
+        // are handled correctly without encoding the directory separators.
+        $scriptDirectory = str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/')));
+        if ($scriptDirectory === '.' || $scriptDirectory === '/') {
+            $scriptDirectory = '';
+        }
+        $fileSegments = array_merge($segments, [$name]);
+        $encodedFilePath = implode('/', array_map('rawurlencode', $fileSegments));
+        $url = $scriptDirectory . '/' . $encodedFilePath;
     }
 ?>
   <a class="file-row" style="--i:<?= min($index,18) ?>" data-name="<?= h(function_exists('mb_strtolower') ? mb_strtolower($name,'UTF-8') : strtolower($name)) ?>" href="<?= h($url) ?>">
